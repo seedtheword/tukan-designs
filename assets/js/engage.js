@@ -20,6 +20,32 @@
     return CONFIG;
   }
 
+  // Send a payload to a real backend so it emails Brandon (no email app opens):
+  //  1) Google Apps Script (cfg.orderHandlerUrl) if configured, else
+  //  2) FormSubmit (cfg.formsubmitEmail) — a no-account form-to-email relay.
+  // Returns true on success, false if no backend configured, throws on error.
+  async function sendToBackend(cfg, payload) {
+    if (cfg && cfg.orderHandlerUrl) {
+      var res = await fetch(cfg.orderHandlerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); });
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || 'failed');
+    }
+    if (cfg && cfg.formsubmitEmail) {
+      var r2 = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(cfg.formsubmitEmail), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); });
+      if (r2 && (r2.success === true || r2.success === 'true')) return true;
+      throw new Error((r2 && r2.message) || 'failed');
+    }
+    return false; // no backend -> caller uses mailto fallback
+  }
+
   // ── Consultation request form ────────────────────────────────
   function initConsult() {
     var form = document.getElementById('consult-form');
@@ -44,6 +70,7 @@
 
       var payload = {
         action: 'consultation',
+        _subject: 'Consultation Request — ' + name,
         name: name,
         email: email,
         phone: val('cs-phone'),
@@ -57,8 +84,14 @@
       setStatus('');
 
       var cfg = await loadConfig();
-      var url = cfg && cfg.orderHandlerUrl;
-      if (!url) {
+      try {
+        var sent = await sendToBackend(cfg, payload);
+        if (sent) {
+          setStatus('Thanks, ' + name.split(' ')[0] + '! Your request is in — we\'ll get back to you by email to set up a time.', 'ok');
+          form.reset();
+          btn.disabled = false; btn.textContent = 'Request My Consultation →';
+          return;
+        }
         // No backend — open an email draft to Brandon so nothing is lost.
         var body = encodeURIComponent(
           'Consultation request from the website:\n\n' +
@@ -70,19 +103,6 @@
         window.location.href = 'mailto:hello@tukandesigns.com?subject=' +
           encodeURIComponent('Consultation Request — ' + name) + '&body=' + body;
         setStatus('Opening your email app to send your request…', 'ok');
-        btn.disabled = false; btn.textContent = 'Request My Consultation →';
-        return;
-      }
-      try {
-        var res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
-        }).then(function (r) { return r.json(); });
-        if (res && res.ok) {
-          setStatus('Thanks, ' + name.split(' ')[0] + '! Your request is in — we\'ll get back to you by email to set up a time.', 'ok');
-          form.reset();
-        } else { throw new Error((res && res.error) || 'failed'); }
       } catch (err) {
         setStatus('Something went wrong. Please try again, or call/email us directly.', 'err');
       } finally {
@@ -113,26 +133,19 @@
       setStatus('');
 
       var cfg = await loadConfig();
-      var url = cfg && cfg.orderHandlerUrl;
-      if (!url) {
+      try {
+        var sent = await sendToBackend(cfg, { action: 'newsletter', _subject: 'Newsletter signup — TuKan Designs', email: email, source: 'tukan-website' });
+        if (sent) {
+          setStatus('You\'re in! Watch your inbox for new pieces and sales.', 'ok');
+          form.reset();
+          btn.disabled = false; btn.textContent = 'Subscribe';
+          return;
+        }
         // No backend — open an email to subscribe manually.
         window.location.href = 'mailto:hello@tukandesigns.com?subject=' +
           encodeURIComponent('Newsletter signup') + '&body=' +
           encodeURIComponent('Please add me to the TuKan Designs list: ' + email);
         setStatus('Opening your email app to confirm…', 'ok');
-        btn.disabled = false; btn.textContent = 'Subscribe';
-        return;
-      }
-      try {
-        var res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'newsletter', email: email, source: 'tukan-website' })
-        }).then(function (r) { return r.json(); });
-        if (res && res.ok) {
-          setStatus('You\'re in! Watch your inbox for new pieces and sales.', 'ok');
-          form.reset();
-        } else { throw new Error((res && res.error) || 'failed'); }
       } catch (err) {
         setStatus('Something went wrong. Please try again or email us.', 'err');
       } finally {

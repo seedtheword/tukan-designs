@@ -93,11 +93,44 @@
     }
   };
 
-  async function getHandlerUrl() {
+  async function getConfig() {
     try {
-      var cfg = await fetch('assets/data/site-config.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); });
-      return cfg.orderHandlerUrl || '';
-    } catch (_) { return ''; }
+      return await fetch('assets/data/site-config.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); });
+    } catch (_) { return {}; }
+  }
+
+  // Send a payload to a real backend so it emails Brandon (no email app opens):
+  //  1) Google Apps Script (cfg.orderHandlerUrl) if configured, else
+  //  2) FormSubmit (cfg.formsubmitEmail) — a no-account form-to-email relay.
+  // Returns true on success, false if no backend is configured, throws on error.
+  async function sendToBackend(cfg, payload) {
+    if (cfg && cfg.orderHandlerUrl) {
+      var res = await fetch(cfg.orderHandlerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); });
+      if (res && res.ok) return true;
+      throw new Error((res && res.error) || 'Submit failed');
+    }
+    if (cfg && cfg.formsubmitEmail) {
+      // FormSubmit AJAX can't reliably carry big base64 photo blobs, so send a
+      // photo-light copy (names + count) and note that photos follow by email.
+      var light = {};
+      for (var k in payload) { if (payload.hasOwnProperty(k) && k !== 'photos') light[k] = payload[k]; }
+      if (payload.photos && payload.photos.length) {
+        light.photos = payload.photos.map(function (p) { return p.name; }).join(', ');
+        light.photoNote = payload.photos.length + ' photo(s) attached by the visitor — reply to request them.';
+      }
+      var r2 = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(cfg.formsubmitEmail), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(light)
+      }).then(function (r) { return r.json(); });
+      if (r2 && (r2.success === true || r2.success === 'true')) return true;
+      throw new Error((r2 && r2.message) || 'Submit failed');
+    }
+    return false; // no backend configured -> caller uses mailto fallback
   }
 
   form.addEventListener('submit', async function (e) {
@@ -116,6 +149,7 @@
 
     var payload = {
       action: 'customOrder',
+      _subject: 'Custom Table Request — ' + name,
       name: name,
       email: email,
       phone: document.getElementById('co-phone').value.trim(),
@@ -129,9 +163,19 @@
       submittedAt: new Date().toISOString()
     };
 
-    var url = await getHandlerUrl();
-    if (!url) {
-      // No backend wired yet — fall back to an email draft so nothing is lost.
+    var cfg = await getConfig();
+    try {
+      var sent = await sendToBackend(cfg, payload);
+      if (sent) {
+        setStatus('Thank you! Your request is in — we\'ll reach out within one business day.', 'ok');
+        form.reset();
+        photos = [];
+        renderPreviews();
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send My Custom Request →';
+        return;
+      }
+      // No backend configured — fall back to an email draft so nothing is lost.
       var body = encodeURIComponent(
         'Name: ' + name + '\nEmail: ' + email + '\nPhone: ' + payload.phone +
         '\nType: ' + type + '\nWood: ' + payload.wood + '\nFinish: ' + payload.finish +
@@ -141,26 +185,6 @@
       window.location.href = 'mailto:hello@tukandesigns.com?subject=' +
         encodeURIComponent('Custom Table Request — ' + name) + '&body=' + body;
       setStatus('Opening your email app… if nothing happens, email us at hello@tukandesigns.com', 'ok');
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Send My Custom Request →';
-      return;
-    }
-
-    try {
-      var res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      }).then(function (r) { return r.json(); });
-
-      if (res && res.ok) {
-        setStatus('Thank you! Your request is in — we\'ll reach out within one business day.', 'ok');
-        form.reset();
-        photos = [];
-        renderPreviews();
-      } else {
-        throw new Error((res && res.error) || 'Submit failed');
-      }
     } catch (err) {
       setStatus('Something went wrong. Please call or email us and we\'ll help right away.', 'err');
     } finally {
