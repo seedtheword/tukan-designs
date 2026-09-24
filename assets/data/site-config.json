@@ -2,10 +2,7 @@
   "_help": "TuKan Designs site configuration. Fill these in once the backend + PayPal are set up. Leave a value as an empty string to keep that feature in its safe fallback mode (custom orders and newsletter fall back to mailto; payments show a 'being set up' note; consultation shows call/email).",
 
   "orderHandlerUrl": "",
-  "_orderHandlerUrl_note": "Google Apps Script Web App URL (deployed as 'Anyone' access). Handles action:'customOrder', 'consultation', 'newsletter', and 'paymentLog'. See docs/apps-script/order-handler.gs and SETUP.md. Takes priority over formsubmitEmail when set.",
-
-  "formsubmitEmail": "Bwstudebaker7@gmail.com",
-  "_formsubmitEmail_note": "Demo backend: form submissions are emailed to this address via formsubmit.co (no account needed). IMPORTANT: the very first submission triggers a one-time activation email to this inbox — click the link in it to start receiving submissions. Used only when orderHandlerUrl is empty. Swap to the Apps Script URL later for full control.",
+  "_orderHandlerUrl_note": "Google Apps Script Web App URL (deployed as 'Anyone' access) — the SAME setup as the Seed the Word site. Handles action:'customOrder', 'consultation', 'newsletter', and 'paymentLog', saves to a Google Sheet, and emails Brandon (Bwstudebaker7@gmail.com). Deploy docs/apps-script/order-handler.gs per SETUP.md, then paste the /exec URL here. Until it is set, forms fall back to opening the visitor's email app.",
 
   "paypalClientId": "",
   "paypalMode": "live",

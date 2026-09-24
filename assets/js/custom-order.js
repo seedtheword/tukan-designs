@@ -99,38 +99,23 @@
     } catch (_) { return {}; }
   }
 
-  // Send a payload to a real backend so it emails Brandon (no email app opens):
-  //  1) Google Apps Script (cfg.orderHandlerUrl) if configured, else
-  //  2) FormSubmit (cfg.formsubmitEmail) — a no-account form-to-email relay.
-  // Returns true on success, false if no backend is configured, throws on error.
+  // POST the payload to the Google Apps Script Web App (cfg.orderHandlerUrl),
+  // same pattern as the Seed the Word site: JSON as text/plain (no CORS
+  // preflight), and the script returns { ok: true }. It saves to a Sheet and
+  // emails Brandon. Returns true on success, false if not configured, throws
+  // on error so the caller can show a friendly message.
   async function sendToBackend(cfg, payload) {
     if (cfg && cfg.orderHandlerUrl) {
       var res = await fetch(cfg.orderHandlerUrl, {
         method: 'POST',
+        mode: 'cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
       }).then(function (r) { return r.json(); });
       if (res && res.ok) return true;
       throw new Error((res && res.error) || 'Submit failed');
     }
-    if (cfg && cfg.formsubmitEmail) {
-      // FormSubmit AJAX can't reliably carry big base64 photo blobs, so send a
-      // photo-light copy (names + count) and note that photos follow by email.
-      var light = {};
-      for (var k in payload) { if (payload.hasOwnProperty(k) && k !== 'photos') light[k] = payload[k]; }
-      if (payload.photos && payload.photos.length) {
-        light.photos = payload.photos.map(function (p) { return p.name; }).join(', ');
-        light.photoNote = payload.photos.length + ' photo(s) attached by the visitor — reply to request them.';
-      }
-      var r2 = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(cfg.formsubmitEmail), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(light)
-      }).then(function (r) { return r.json(); });
-      if (r2 && (r2.success === true || r2.success === 'true')) return true;
-      throw new Error((r2 && r2.message) || 'Submit failed');
-    }
-    return false; // no backend configured -> caller uses mailto fallback
+    return false; // not configured -> caller uses mailto fallback
   }
 
   form.addEventListener('submit', async function (e) {
